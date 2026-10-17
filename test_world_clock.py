@@ -236,8 +236,47 @@ def w1_08_single_writer_guard():
         print('PASS W1-08 a second authoritative writer on the same state directory refuses to start')
 
 
+def w1_09_imports_without_fcntl():
+    """Neo finding 1: the module must import and run on a platform without fcntl (Windows). Simulated by
+    blocking the fcntl import in a subprocess; single_writer then needs msvcrt or fails with a clear message."""
+    import subprocess, sys, textwrap
+    code=textwrap.dedent('''
+        import sys, tempfile; sys.modules['fcntl']=None
+        import open_world
+        from open_world import LiveUniverse, ClockPolicy
+        d=tempfile.mkdtemp(); u=LiveUniverse(d,clock=ClockPolicy(tick_seconds=0)); t=u.join()['token']
+        u.submit(t,'wait'); u.advance(); print('import-and-tick-ok', u.w.tick)
+        try: LiveUniverse(tempfile.mkdtemp(),clock=ClockPolicy(tick_seconds=0),single_writer=True); print('guard-ok')
+        except RuntimeError as e: print('guard-message:', 'no file-locking primitive' in str(e))
+    ''')
+    r=subprocess.run([sys.executable,'-c',code],capture_output=True,text=True,timeout=120)
+    assert r.returncode==0,r.stderr[-800:]
+    assert 'import-and-tick-ok' in r.stdout and ('guard-ok' in r.stdout or 'guard-message: True' in r.stdout),r.stdout
+    print('PASS W1-09 open_world imports and ticks without fcntl; the writer guard degrades with a clear message, not an ImportError')
+
+
+def w1_10_clock_thread_errors_are_surfaced():
+    """Neo finding 2: a failing tick must not be swallowed. The error is recorded, shown in clock_view(), and time resumes."""
+    with tempfile.TemporaryDirectory() as d:
+        u=LiveUniverse(d,clock=ClockPolicy(tick_seconds=0.05))
+        try:
+            u.join('human');real=u.advance;calls={'n':0}
+            def flaky():
+                calls['n']+=1
+                if calls['n']==1:raise ValueError('injected kernel fault')
+                return real()
+            u.advance=flaky
+            deadline=time.monotonic()+2
+            while (u.clock_view()['tick_failures']==0 or u.w.tick<22) and time.monotonic()<deadline:time.sleep(0.02)
+            cv=u.clock_view()
+            assert cv['tick_failures']>=1 and cv['last_error'] is None or cv['last_error']['kind']=='ValueError',cv
+            assert u.w.tick>=22,'clock did not resume after a failed tick'
+        finally:u.close()
+        print('PASS W1-10 a failing tick is counted and reported in clock_view; the clock keeps running')
+
+
 if __name__=='__main__':
     for f in [w1_01_permutation_invariance,w1_02_polling_is_free_and_inert,w1_03_duplicate_submission_single_effect,
               w1_04_silent_participants_do_not_stop_time,w1_05_restart_replays_batches_ledgers_hashes,
               w1_06_failed_commit_leaves_published_world_unchanged,w1_07_poisoned_world_refuses_submissions,
-              w1_08_single_writer_guard]:f()
+              w1_08_single_writer_guard,w1_09_imports_without_fcntl,w1_10_clock_thread_errors_are_surfaced]:f()

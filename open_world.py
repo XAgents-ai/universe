@@ -18,7 +18,9 @@ actor views. An observer can obtain global read-only state for auditing; that ex
 disclosed if subsequently used for experiments.
 """
 from __future__ import annotations
-import copy, fcntl, hashlib, json, os, random, secrets, threading, time
+import copy, hashlib, json, logging, os, random, secrets, threading, time
+
+LOG=logging.getLogger('universe.clock')
 from pathlib import Path
 from v0_kernel import World, Params
 
@@ -89,6 +91,30 @@ def canonical_batch(pending,tick,seed=WORLD_SEED):
     return items
 
 
+def _lock_exclusive(fileobj):
+    """Non-blocking exclusive lock on an open file: fcntl on POSIX, msvcrt on Windows. Raises OSError if held."""
+    try:
+        import fcntl
+        fcntl.flock(fileobj.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB);return
+    except ImportError:pass
+    try:
+        import msvcrt
+        fileobj.seek(0);msvcrt.locking(fileobj.fileno(),msvcrt.LK_NBLCK,1);return
+    except ImportError:
+        raise RuntimeError('no file-locking primitive on this platform; run with single_writer=False or add one')
+
+
+def _unlock(fileobj):
+    try:
+        import fcntl
+        fcntl.flock(fileobj.fileno(),fcntl.LOCK_UN);return
+    except ImportError:pass
+    try:
+        import msvcrt
+        fileobj.seek(0);msvcrt.locking(fileobj.fileno(),msvcrt.LK_UNLCK,1)
+    except (ImportError,OSError):pass
+
+
 class LiveUniverse:
     def __init__(self,root,clock=None,world_factory=build_shared_world,single_writer=False):
         self.lock=threading.RLock()
@@ -98,15 +124,17 @@ class LiveUniverse:
             # Deployment guard: one authoritative writer per state directory. A second process (or a
             # second worker) sharing the journal would have its own clock, memory and lock.
             self._lockfile=open(self.root/'.writer.lock','a+')
-            try:fcntl.flock(self._lockfile.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+            try:_lock_exclusive(self._lockfile)
             except OSError:
                 self._lockfile.close();self._lockfile=None
                 raise RuntimeError(f'another writer holds {self.root}: refusing to start a second authority')
+            except RuntimeError:
+                self._lockfile.close();self._lockfile=None;raise
         self.journal=self.root/'events.jsonl';self.w=world_factory()
         self.by_token={};self.next_slot=0;self.last_chain='0'*64;self._poisoned=False
         self.pending={}                       # agent -> (kind,pos), at most one per tick
         self.clock=clock or ClockPolicy()
-        self.last_tick_at=None
+        self.last_tick_at=None;self._clock_error=None;self._clock_failures=0
         if self.journal.exists():self._load()
         self._stop=threading.Event();self._thread=None
         if self.clock.tick_seconds>0:
@@ -120,8 +148,13 @@ class LiveUniverse:
             remaining=due-time.monotonic()
             if remaining>0:
                 self._stop.wait(min(remaining,0.25));continue
-            try:self.advance()
-            except Exception:pass                   # poisoned journal: wait for restart, keep the thread alive
+            try:self.advance();self._clock_error=None
+            except Exception as e:
+                # Never silent: the last failure is kept and shown in clock_view(); the thread stays alive so a
+                # transient fault does not stop time for good, and a poisoned journal waits for a restart.
+                self._clock_failures+=1
+                self._clock_error=dict(kind=type(e).__name__,error=str(e)[:300],tick=self.w.tick,at=time.time())
+                LOG.error('tick failed at %s: %s: %s',self.w.tick,type(e).__name__,e)
             due+=period
             if time.monotonic()-due>period:due=time.monotonic()+period   # fell far behind: re-anchor, never burst
 
@@ -129,15 +162,13 @@ class LiveUniverse:
         self._stop.set()
         if self._thread:self._thread.join(timeout=2)
         if self._lockfile:
-            try:fcntl.flock(self._lockfile.fileno(),fcntl.LOCK_UN)
-            except OSError:pass
-            self._lockfile.close();self._lockfile=None
+            _unlock(self._lockfile);self._lockfile.close();self._lockfile=None
 
     def clock_view(self):
         with self.lock:
             return dict(**self.clock.describe(),tick=self.w.tick,participants=self.next_slot,
                         pending_submissions=len(self.pending),last_tick_at=self.last_tick_at,
-                        journal_poisoned=self._poisoned)
+                        journal_poisoned=self._poisoned,last_error=self._clock_error,tick_failures=self._clock_failures)
 
     # ---------------- identity / journal ----------------
     @staticmethod

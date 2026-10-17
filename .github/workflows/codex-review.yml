@@ -28,7 +28,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ inputs.pr_number }}
         run: bash scripts/fetch_review_context.sh "$PR" "$RUNNER_TEMP/universe-review"
-      - uses: openai/codex-action@v1 # Owner must pin verified commit SHA before enabling
+      - uses: openai/codex-action@bdf19a4a223ec2549a3e2274a0cf61556bc07675 # v1.13, pinned 2026-10-17; see docs/SETUP_STATUS.md
         id: codex
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}

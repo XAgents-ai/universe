@@ -27,7 +27,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ inputs.pr_number }}
         run: bash scripts/fetch_review_context.sh "$PR" "$RUNNER_TEMP/universe-review"
-      - uses: anthropics/claude-code-action@v1 # Owner must pin verified commit SHA before enabling
+      - uses: anthropics/claude-code-action@f27be6b65a4652f08a2ba3cff79114829b588967 # v1.0.252, pinned 2026-10-17; see docs/SETUP_STATUS.md
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |

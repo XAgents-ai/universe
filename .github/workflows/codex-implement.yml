@@ -36,7 +36,7 @@ jobs:
         run: |
           gh issue view "$ISSUE" --json title,body > "$RUNNER_TEMP/universe-issue.json"
           python scripts/build_codex_task.py "$RUNNER_TEMP/universe-issue.json" "$RUNNER_TEMP/codex-task.md"
-      - uses: openai/codex-action@v1
+      - uses: openai/codex-action@bdf19a4a223ec2549a3e2274a0cf61556bc07675 # v1.13, pinned 2026-10-17; see docs/SETUP_STATUS.md
         id: impl
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}

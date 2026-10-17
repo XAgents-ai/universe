@@ -24,7 +24,7 @@ jobs:
         run: python scripts/require_pinned_model_action.py .github/workflows/claude-issues.yml anthropics/claude-code-action
       - name: Preserve a trusted protected-path validator
         run: cp scripts/validate_agent_changes.py "$RUNNER_TEMP/trusted_validator.py"
-      - uses: anthropics/claude-code-action@v1 # Owner must pin verified SHA before enabling
+      - uses: anthropics/claude-code-action@f27be6b65a4652f08a2ba3cff79114829b588967 # v1.0.252, pinned 2026-10-17; see docs/SETUP_STATUS.md
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |

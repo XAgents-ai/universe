@@ -40,6 +40,8 @@ jobs:
         id: impl
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          # Empty installs @openai/codex@latest at run time; a fixed version completes the pin.
+          codex-version: '0.163.0'
           permission-profile: ':workspace'
           safety-strategy: 'drop-sudo'
           prompt-file: ${{ runner.temp }}/codex-task.md

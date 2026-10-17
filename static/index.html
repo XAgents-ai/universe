@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Universe V0 · Physical State Viewer</title>
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<header class="bar"><div class="brand"><div class="sigil">U<span>0</span></div><div><strong>UNIVERSE V0</strong><small>R0.3 · SHARED PHYSICAL UNIVERSE</small></div></div><div id="modeSwitch" class="modes" role="tablist"><button data-role="audit" class="active">Witness replay</button><button data-role="livewatch">Live observer</button><button data-role="liveagent">Join universe</button><button data-role="agent">Solo sandbox</button><button data-role="experiment">Experiment</button></div><div class="headerTag">LIVE WORLD · SAME PHYSICS FOR HUMAN & AI</div></header>
+<main class="layout">
+<section class="stage"><div class="stageTop"><div><div id="viewTitle" class="headTitle">Recorded physical state</div><div id="viewDesc" class="muted">Replay a fixed O2 construction witness. No actions permitted.</div></div><div class="inline"><span id="tickLabel" class="tickLabel">TICK —</span><button id="refreshBtn" class="ghost" hidden>Refresh state ↻</button><button id="exportBtn" class="ghost">Export visible record ↓</button></div></div>
+<div class="viewport"><svg id="universe" aria-label="Lattice state, particles, bonds, energy and heat" viewBox="0 0 800 580" role="img"></svg><div id="canvasNote" class="canvasNote">Loading physical state…</div></div>
+<div class="stageFoot"><div class="legend" id="speciesLegend"></div><div class="layers"><label><input id="bondsToggle" type="checkbox" checked /> Bonds</label><label><input id="heatToggle" type="checkbox" checked /> Heat</label><label><input id="quantaToggle" type="checkbox" checked /> Quanta</label></div></div>
+<div id="timelinePanel" class="timeline"><button id="prevBtn" class="ghost">← Prev</button><input id="timeline" aria-label="Recorded frame" type="range" min="0" max="16" value="0" /><button id="nextBtn" class="ghost">Next →</button><span id="frameLabel" class="tiny">0/16</span></div>
+</section>
+<aside class="side"><section class="panel" id="actionsPanel"><div class="panelHeading">INTERACTION</div><div id="actionInfo" class="muted small">Audit replay cannot alter state.</div><div class="controls" id="controls" hidden><div class="fieldRow"><label>X<input id="x" type="number" min="0" max="999" value="6" /></label><label>Y<input id="y" type="number" min="0" max="999" value="7" /></label></div><div id="envFields" class="fieldRow" hidden><label>Particle<select id="species"></select></label><label>Orientation<select id="direction"><option>N</option><option>E</option><option>S</option><option>W</option></select></label></div><div id="siteList" class="tiny"></div><div class="actions" id="actionButtons"></div></div></section>
+<section class="panel"><div class="panelHeading" id="metricsTitle">ENERGY LEDGER</div><div id="metrics" class="ledger"><div class="muted small">Available in audit and experiment modes. Agent mode exposes only paid local observations.</div></div></section>
+<section class="panel logPanel"><div class="panelHeading" id="logTitle">RECORDED EVENT</div><pre class="log" id="eventLog">—</pre></section>
+<section class="panel note"><div class="panelHeading">INTERPRETATION BOUNDARY</div><p>The viewer draws particles, oriented states, bonds, energy, and heat only. It does not infer objects, organisms, or machines from patterns.</p><p>Agent views contain only previously paid observations. Experiment and witness replay are separate worlds. Live observer is read-only. Its global information is not delivered through participant endpoints.</p></section></aside>
+</main>
+<footer><span>R0.3 kernel · world state, not narrated claims</span><span>Local research prototype · not a public authenticated service</span></footer>
+<script src="/static/app.js"></script>
+</body></html>

@@ -1,0 +1,30 @@
+name: Experimental hypothesis
+description: Register a falsifiable physical-world experiment
+labels: [experiment]
+body:
+  - type: textarea
+    id: hypothesis
+    attributes:
+      label: Hypothesis
+      description: State an outcome that could be refuted.
+    validations:
+      required: true
+  - type: textarea
+    id: initial
+    attributes:
+      label: Initial conditions and controls
+      description: Rule set, seeds, resources, energy, agent information conditions and comparator arms.
+    validations:
+      required: true
+  - type: textarea
+    id: observable
+    attributes:
+      label: Physical observable and falsifier
+      description: What event-trace predicate or capability curve distinguishes competing explanations?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence expected
+      description: Replay traces, ledgers, counterexamples, test commands and review links.

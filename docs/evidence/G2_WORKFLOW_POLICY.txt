@@ -1,0 +1,14 @@
+WARNING unpinned model actions (pin a verified commit SHA before enabling AI workflows):
+  claude-review.yml: anthropics/claude-code-action@v1
+  codex-review.yml: openai/codex-action@v1
+  claude-issues.yml: anthropics/claude-code-action@v1
+  codex-implement.yml: openai/codex-action@v1
+PASS security policy: no model secrets in PR CI, review manual/trusted-base, implement validator staged, generated tests deferred to CI
+PASS protected-path policy docs/issues/acceptance.md rejected
+PASS protected-path policy scripts/extra_helper.py rejected
+PASS protected-path policy docs/evidence/results.txt rejected
+PASS protected-path policy .github/workflows/new.yml rejected
+PASS protected-path policy v0_responder.py allowed
+PASS: essential source and collaboration workflows included; no runtime journal
+
+PASS_COUNT=35

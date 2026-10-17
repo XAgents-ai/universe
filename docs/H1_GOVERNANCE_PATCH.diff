@@ -1,0 +1,93 @@
+diff -ru -x '*.pyc' -x __pycache__ -x '*.zip' zip/.github/workflows/claude-issues.yml patched/.github/workflows/claude-issues.yml
+--- zip/.github/workflows/claude-issues.yml	2026-10-17 07:53:28.000000000 +0000
++++ patched/.github/workflows/claude-issues.yml	2026-10-17 08:19:42.158432104 +0000
+@@ -19,6 +19,9 @@
+       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+         with:
+           persist-credentials: false
++          fetch-depth: 0
++      - name: Preserve a trusted protected-path validator
++        run: cp scripts/validate_agent_changes.py "$RUNNER_TEMP/trusted_validator.py"
+       - uses: anthropics/claude-code-action@v1 # Owner must pin verified SHA before enabling
+         with:
+           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+@@ -28,3 +31,6 @@
+             bootstrap scripts, credential files or trusted collaboration controls.
+             Propose a branch/PR and preserve acceptance criteria. Never merge.
+           claude_args: '--max-turns 12'
++      - name: Reject protected or credential-like changes
++        if: always()
++        run: python "$RUNNER_TEMP/trusted_validator.py"
+diff -ru -x '*.pyc' -x __pycache__ -x '*.zip' zip/.github/workflows/codex-implement.yml patched/.github/workflows/codex-implement.yml
+--- zip/.github/workflows/codex-implement.yml	2026-10-17 07:55:58.000000000 +0000
++++ patched/.github/workflows/codex-implement.yml	2026-10-17 08:19:42.158242506 +0000
+@@ -15,7 +15,6 @@
+     runs-on: ubuntu-latest
+     timeout-minutes: 35
+     env:
+-      GH_TOKEN: ${{ github.token }}
+       ISSUE: ${{ inputs.issue_number }}
+       FEATURE_BRANCH: codex/issue-${{ inputs.issue_number }}-run-${{ github.run_id }}
+     steps:
+@@ -28,6 +27,8 @@
+         run: git switch -c "$FEATURE_BRANCH"
+       - name: Build a scoped task from the issue
+         shell: bash
++        env:
++          GH_TOKEN: ${{ github.token }}
+         run: |
+           gh issue view "$ISSUE" --json title,body > "$RUNNER_TEMP/universe-issue.json"
+           python scripts/build_codex_task.py "$RUNNER_TEMP/universe-issue.json" "$RUNNER_TEMP/codex-task.md"
+@@ -42,6 +43,8 @@
+         run: python "$RUNNER_TEMP/trusted_validator.py"
+       - name: Open a PR instead of merging
+         shell: bash
++        env:
++          GH_TOKEN: ${{ github.token }}
+         run: |
+           if [ -z "$(git status --porcelain)" ]; then
+             echo 'Codex generated no tracked modifications; nothing to PR.'
+@@ -54,4 +57,4 @@
+           git push -u origin "$FEATURE_BRANCH"
+           gh pr create --base main --head "$FEATURE_BRANCH" \
+              --title "Codex proposal for issue #$ISSUE" \
+-             --body "Closes #$ISSUE only after independent review and human merge.\n\n**Unverified model proposal:** run Physics and Replay CI, then obtain independent review. Never infer that passing code tests establishes open-ended emergence."
++             --body "$(printf 'Closes #%s only after independent review and human merge.\n\n**Unverified model proposal:** run Physics and Replay CI, then obtain independent review. Never infer that passing code tests establishes open-ended emergence.' "$ISSUE")"
+diff -ru -x '*.pyc' -x __pycache__ -x '*.zip' zip/scripts/test_workflow_boundaries.py patched/scripts/test_workflow_boundaries.py
+--- zip/scripts/test_workflow_boundaries.py	2026-10-17 07:56:00.000000000 +0000
++++ patched/scripts/test_workflow_boundaries.py	2026-10-17 08:19:42.158653423 +0000
+@@ -17,6 +17,15 @@
+ impl=(W/'codex-implement.yml').read_text()
+ assert 'trusted_validator.py' in impl and 'scripts/validate_agent_changes.py "$RUNNER_TEMP/trusted_validator.py"' in impl
+ assert 'bash run_checks.sh' not in impl, 'Model-generated code must not run in secret-backed implementation job'
++import re
++unpinned=[]
++for f in ['claude-review.yml','codex-review.yml','claude-issues.yml','codex-implement.yml']:
++    for m in re.finditer(r'uses:\s*(anthropics/claude-code-action|openai/codex-action)@(\S+)',(W/f).read_text()):
++        if not re.fullmatch(r'[0-9a-f]{40}',m.group(2)): unpinned.append(f'{f}: {m.group(1)}@{m.group(2)}')
++if unpinned: print('WARNING unpinned model actions (pin a verified commit SHA before enabling AI workflows):',*unpinned,sep='\n  ')
++issues=(W/'claude-issues.yml').read_text()
++assert 'trusted_validator.py' in issues, 'claude-issues must stage and run the trusted validator like codex-implement'
++assert '\n      GH_TOKEN:' not in (W/'codex-implement.yml').read_text().split('steps:')[0], 'GH_TOKEN must be step-scoped, not job-scoped, in the implementation job'
+ for f in W.glob('*.yml'):
+     d=yaml.safe_load(f.read_text()); assert isinstance(d,dict) and d.get('jobs'), f
+ print('PASS security policy: no model secrets in PR CI, review manual/trusted-base, implement validator staged, generated tests deferred to CI')
+diff -ru -x '*.pyc' -x __pycache__ -x '*.zip' zip/scripts/validate_agent_changes.py patched/scripts/validate_agent_changes.py
+--- zip/scripts/validate_agent_changes.py	2026-10-17 07:54:06.000000000 +0000
++++ patched/scripts/validate_agent_changes.py	2026-10-17 08:19:42.158549785 +0000
+@@ -14,11 +14,13 @@
+ changed.update(git('ls-files','--others','--exclude-standard'))
+ try: changed.update(git('diff','--name-only','main...HEAD'))
+ except subprocess.CalledProcessError: pass
+-forbidden_prefixes=('.github/','.universe_state/','.venv/','.env','node_modules/','secrets/')
++forbidden_prefixes=('.github/','.universe_state/','.venv/','.env','node_modules/','secrets/','docs/issues/','docs/evidence/')
+ forbidden_names={'AGENTS.md','CLAUDE.md','SECURITY.md','.gitignore',
+  'run_checks.sh','scripts/validate_agent_changes.py','scripts/build_codex_task.py',
+  'scripts/bootstrap_github.sh','scripts/bootstrap_github.ps1','scripts/seed_issues.sh',
+- 'docs/SCIENTIFIC_CLAIMS.md','docs/GITHUB_SETUP.md',
++ 'docs/SCIENTIFIC_CLAIMS.md','docs/GITHUB_SETUP.md','docs/COLLABORATION.md',
++ 'scripts/test_workflow_boundaries.py','scripts/fetch_review_context.sh','scripts/audit_repository.py',
++ 'requirements.txt','requirements-dev.txt','verify_journal.py',
+  'v0_kernel_r0.py','v0_kernel_r01.py','v0_kernel_r02.py'}
+ forbidden_suffixes={'.pem','.p12','.key','.pfx'}
+ errors=[]

@@ -1,0 +1,81 @@
+{
+  "claim": "From pre-placed ordinary seed arms, assemble a physically coupled P-A responder from free matter; no hand-placement of P or A at final coordinates",
+  "scope": "Direct P-to-A sensor coupling, not full P-C-G-C-A gate machine; no self-construction from raw matter",
+  "seed": 7,
+  "warmup_ticks": 20,
+  "sites": [
+    [
+      5,
+      1
+    ],
+    [
+      6,
+      10
+    ],
+    [
+      2,
+      5
+    ]
+  ],
+  "trace": [
+    [
+      20,
+      "set",
+      [
+        6,
+        10
+      ]
+    ],
+    [
+      21,
+      "set",
+      [
+        5,
+        1
+      ]
+    ],
+    [
+      22,
+      "set",
+      [
+        2,
+        5
+      ]
+    ],
+    [
+      23,
+      null,
+      null
+    ]
+  ],
+  "search": {
+    "status": "WITNESS",
+    "nodes": 205,
+    "depth": 4,
+    "secs": 0.26,
+    "exhausted_depth": null
+  },
+  "12_seed_robust": 12,
+  "counterfactuals": {
+    "cue": {
+      "moved": true,
+      "disconnected": true
+    },
+    "quiet": {
+      "moved": false,
+      "disconnected": true
+    },
+    "wrong-cell": {
+      "moved": false,
+      "disconnected": true
+    },
+    "path-cut": {
+      "moved": false,
+      "disconnected": true
+    },
+    "unbuilt": {
+      "moved": false,
+      "disconnected": true
+    }
+  }
+}

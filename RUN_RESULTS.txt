@@ -1,0 +1,86 @@
+kernel: v0_kernel
+PASS F1 remove charged store exports its energy
+PASS F1 remove bonded particle exports bond energy
+PASS F1 remove excited wire exports the quantum
+PASS F2 welding two owners' clusters transfers no authority
+PASS F2 claim is explicit, exclusive, charged
+PASS F3 state hash distinguishes sources / auth / rng
+PASS F4 replace removes the old particle's bonds
+PASS F4 unknown op is refused and not charged
+PASS F5 oracle search key includes source phase
+REGRESSION: PASS
+PASS F6: cold canonical mode yields same future from merged material states; live seeded RNG remains future-relevant and in key
+PASS bounded negative: no sensor species can arise from a K+B inventory; horizon 4; mode canonical cold; 8 generated successors
+PASS assembly: agent-triggered mover pushed S (9,5)->(9,6)
+PASS assembly: agent-triggered welder bonded (9,6)-(9,7)
+PASS control: inhibited sensor event produced no push (gate inhibit path works)
+PASS I2: write to a non-authorized site refused
+PASS I2: agent primitives are only set/observe on control sites
+PASS I3/I4: after disconnect, sensor event -> object moved, no agent input consumed
+PASS I4: same event with sensor->controller wire cut -> no movement (causal path)
+PASS I4: event at a non-sensed cell -> no movement
+PASS I4: no event -> no movement
+PASS I3: zero agent operations consumed after disconnect
+PASS I3: replay reproduces all 60 state hashes exactly
+PASS I5: energy+matter ledger held on every one of 12000 fuzzed ticks across 40 random worlds
+
+ledger at end of 'respond' run: {'Ex': 0, 'Eq': 32, 'Eb': 15, 'ET': 3, 'Ein': 40, 'Eout': 4, 'total': 14}
+
+NOT DEMONSTRATED BY THIS HAND-PLACED O1 TEST: I1 for the gated responder. See v0_responder.py for seeded P-A construction. Machine M was hand-placed; no O2 witness for this full gated design. A separate P-A responder O2 is implemented in v0_responder.py.
+
+OVERALL: PASS
+write at t=20; at t=104 ring holds 1 quantum, reader store counted 8 read pulses (cap 8)
+erase: inhibit written at tick 104 to meet the quantum at G on tick 105; at t=135 ring holds 0 quanta
+control: mistimed inhibit -> ring holds 1 quantum at t=90
+ledger: {'Ex': 0, 'Eq': 32, 'Eb': 15, 'ET': 5, 'Ein': 44, 'Eout': 12, 'total': 20}
+MEMORY WITNESS: PASS
+seed world charged to t=20; construction sites [(3, 4), (6, 7), (7, 1), (9, 8)]; distance-to-goal 5
+oracle O2: {'status': 'WITNESS', 'nodes': 1896, 'depth': 5, 'secs': 3.28, 'exhausted_depth': None}
+witness trace: [(20, ('set', (6, 7))), (21, ('set', (9, 8))), (22, ('set', (3, 4))), (23, ('set', (7, 1)))]
+replay under real params, same seed: goal reached = True
+robustness: witness reaches goal under 12/12 fresh seeds
+function: signal -> constructed C'-A' element pushes the object: built=True, unbuilt control=False
+persistence: target bond present after 200 idle ticks = True; ledger {'Ex': 0, 'Eq': 40, 'Eb': 17, 'ET': 0, 'Ein': 48, 'Eout': 7, 'total': 16}
+
+I1 (Claim 1, seeded construction of a second functioning element): ESTABLISHED
+O2 autonomous responder: {'status': 'WITNESS', 'nodes': 205, 'depth': 4, 'secs': 0.41, 'exhausted_depth': None}
+CONTROL TRACE: [(20, ('set', (6, 10))), (21, ('set', (5, 1))), (22, ('set', (2, 5)))]
+PASS constructed bonded P-A; automatic response after disconnect; five causal comparisons including unbuilt; 12/12 fresh seeds
+PASS audit immutable timeline, recorded kernel events, conservation
+PASS human agent receives only local paid observation; no god access
+PASS experiment clone: only logged boundary ops, no control writes
+VIEWER API: PASS
+PASS shared actors inhabit same physical state, segregated observations, independent authorization, reload exact hashes
+PASS live HTTP bearer auth, two participant types, read-only observer, no boundary writes
+audit: Recorded physical state TICK 20
+audit: TICK 31
+agent: Solo research sandbox
+agent observed: [
+  {
+    "action": "observe",
+    "pos": [
+      6,
+      7
+    ],
+    "result": "ok"
+  }
+]
+experiment: Experimenter · isolated clone
+experiment drop event: [
+  {
+    "tick": 20,
+    "blocked": 0,
+    "environment": [
+      [
+        "drop",
+        [
+          1,
+          1
+        ],
+JavaScript errors: []
+
+OPTIONAL BROWSER EXECUTION NOTE:
+The combined WITH_BROWSER run reached and passed test_viewer_ui.py, then exceeded the command time limit during the following browser startup.
+Re-running test_live_ui.py standalone with a 40-second limit returned exit code 0:
+PASS headless browser: live global view, paid participant observation, charged set, same persistent world, no JS errors
+No complete depth-7 negative-oracle exploration is claimed in R0.3.

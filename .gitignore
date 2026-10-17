@@ -1,0 +1,27 @@
+# Runtime journals contain participant credentials. Never commit them.
+.universe_state/
+**/.universe_state/
+*.sqlite
+*.sqlite3
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*api_key*
+*secret*.json
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+node_modules/
+.DS_Store
+/tmp/
+.o2_search_cache/
+# Generated reports (baseline evidence is recorded deliberately under docs/evidence)
+RUN_RESULTS.local.txt

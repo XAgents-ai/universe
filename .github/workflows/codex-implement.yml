@@ -1,0 +1,67 @@
+name: Codex Implement Scoped Issue
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Existing GitHub issue number to implement (explicit human-triggered run)'
+        required: true
+        type: number
+permissions:
+  contents: write
+  issues: read
+  pull-requests: write
+jobs:
+  implement:
+    if: ${{ vars.ENABLE_CODEX_IMPLEMENT == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      ISSUE: ${{ inputs.issue_number }}
+      FEATURE_BRANCH: codex/issue-${{ inputs.issue_number }}-run-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Enforce verified immutable model action pin
+        run: python scripts/require_pinned_model_action.py .github/workflows/codex-implement.yml openai/codex-action
+      - name: Preserve a trusted protected-path validator
+        run: cp scripts/validate_agent_changes.py "$RUNNER_TEMP/trusted_validator.py"
+      - name: Establish feature branch
+        run: git switch -c "$FEATURE_BRANCH"
+      - name: Build a scoped task from the issue
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue view "$ISSUE" --json title,body > "$RUNNER_TEMP/universe-issue.json"
+          python scripts/build_codex_task.py "$RUNNER_TEMP/universe-issue.json" "$RUNNER_TEMP/codex-task.md"
+      - uses: openai/codex-action@v1
+        id: impl
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          permission-profile: ':workspace'
+          safety-strategy: 'drop-sudo'
+          prompt-file: ${{ runner.temp }}/codex-task.md
+      - name: Reject protected or credential-like changes
+        run: python "$RUNNER_TEMP/trusted_validator.py"
+      - name: Open a PR instead of merging
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo 'Codex generated no tracked modifications; nothing to PR.'
+            exit 0
+          fi
+          git config user.name 'universe-codex-bot'
+          git config user.email 'universe-codex-bot@users.noreply.github.com'
+          git add -A
+          git commit -m "Implement universe issue #$ISSUE (Codex proposal)"
+          # Configure GitHub authentication only AFTER the model has exited and
+          # the trusted validator passed. Checkout never persists credentials.
+          gh auth setup-git
+          git push -u origin "$FEATURE_BRANCH"
+          gh pr create --base main --head "$FEATURE_BRANCH" \
+             --title "Codex proposal for issue #$ISSUE" \
+             --body "$(printf 'Closes #%s only after independent review and human merge.\n\n**Unverified model proposal:** run Physics and Replay CI, then obtain independent review. Never infer that passing code tests establishes open-ended emergence.' "$ISSUE")"

@@ -1,0 +1,29 @@
+name: Reproducible defect
+description: Report a counterexample with a replayable trace
+labels: [bug]
+body:
+  - type: textarea
+    id: claim
+    attributes:
+      label: Violated claim or invariant
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Minimal world and action trace
+      description: Include seed, rules, initial placements, tick and controls (no secrets).
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected versus observed
+    validations:
+      required: true
+  - type: textarea
+    id: reproducer
+    attributes:
+      label: Executable regression or command
+    validations:
+      required: true

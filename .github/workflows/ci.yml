@@ -12,11 +12,12 @@ concurrency:
   cancel-in-progress: true
 jobs:
   acceptance:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest]
         python-version: ['3.11', '3.13']
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -35,6 +36,7 @@ jobs:
       - name: Compile sources
         run: python -m compileall -q .
       - name: Run deterministic acceptance suite
+        shell: bash
         env:
           PYTHONDONTWRITEBYTECODE: '1'
         run: |
@@ -44,7 +46,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: universe-acceptance-py${{ matrix.python-version }}
+          name: universe-acceptance-${{ matrix.os }}-py${{ matrix.python-version }}
           path: ci-checks.log
           if-no-files-found: warn
           retention-days: 30

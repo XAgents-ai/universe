@@ -30,7 +30,8 @@ SESSIONS = {}
 LOCK = threading.RLock()
 # W1: the world owns its clock. UNIVERSE_TICK_SECONDS > 0 runs the scheduler; 0 is manual mode for tests/harnesses.
 LIVE = LiveUniverse(Path(os.environ.get('UNIVERSE_STATE_DIR', str(HERE/'.universe_state'))),
-                    clock=ClockPolicy(tick_seconds=float(os.environ.get('UNIVERSE_TICK_SECONDS', '1.0'))))
+                    clock=ClockPolicy(tick_seconds=float(os.environ.get('UNIVERSE_TICK_SECONDS', '1.0'))),
+                    single_writer=True)   # one authoritative writer per state directory; a second process refuses to start
 
 
 class Create(BaseModel):
@@ -256,6 +257,7 @@ def live_act(cmd:Action, authorization: str | None = Header(default=None)):
     try:return LIVE.submit(token,cmd.kind,cmd.x,cmd.y)
     except KeyError:raise HTTPException(401,'Unknown participant token')
     except ValueError as e:raise HTTPException(403,str(e))
+    except RuntimeError as e:raise HTTPException(503,str(e))   # journal poisoned: fail closed, never acknowledge
 
 
 @APP.get('/api/live/clock')

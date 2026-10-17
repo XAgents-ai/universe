@@ -3,12 +3,14 @@
 Time belongs to the universe, not to whoever makes the most API requests:
  * An HTTP request never advances physics. A participant SUBMITS at most one action for the
    next tick (set / observe / claim / wait, where 'wait' is the explicit no-op).
- * The world advances on its own clock policy - a scheduler interval, or as soon as every joined
-   participant has submitted - including when participants are silent. A missing action is a no-op.
- * The accepted batch is ordered canonically (sorted by agent id, rotated by tick so nobody holds
-   standing priority), executed as ONE kernel tick, and journaled as ONE replayable transition with
-   its outcomes, energy ledger and resulting state hash. Physical conflicts inside the tick are
-   resolved by the kernel's seeded rule, never by network arrival order.
+ * The world advances on its own clock - a fixed scheduler interval - including when participants
+   are silent. A missing action is a no-op. Nothing a participant does can make a tick come sooner:
+   there is no all-submitted barrier and no tick endpoint (review finding B).
+ * The accepted batch is ordered by a seeded permutation keyed by (world seed, tick): a function of
+   the world, never of network arrival, replayable, and without the parity structure that a rotation
+   rule gives sparse contests (review finding C). Each tick is executed as ONE kernel tick and
+   journaled as ONE replayable transition with its outcomes, energy ledger and resulting state hash.
+   Physical conflicts inside the tick are resolved by the kernel's seeded rule.
  * Journal-first commit: the published world is swapped only after the record is durable.
 
 Local research server only. No live boundary ops, no privileged tick endpoint, no global state in
@@ -16,7 +18,7 @@ actor views. An observer can obtain global read-only state for auditing; that ex
 disclosed if subsequently used for experiments.
 """
 from __future__ import annotations
-import copy, hashlib, json, os, secrets, threading, time
+import copy, fcntl, hashlib, json, os, random, secrets, threading, time
 from pathlib import Path
 from v0_kernel import World, Params
 
@@ -60,36 +62,46 @@ def global_snapshot(w):
 
 
 class ClockPolicy:
-    """The world's own clock.
+    """The world's own clock: strictly periodic.
 
     tick_seconds <= 0 : manual mode - advance() is called by the owning process (tests, harnesses).
     tick_seconds  > 0 : a scheduler thread advances every tick_seconds, whether or not anyone acted.
-    early_tick_when_all_submitted : advance as soon as every joined participant has submitted.
+    There is deliberately no early-tick barrier: participant behaviour cannot shorten a tick.
     """
-    def __init__(self,tick_seconds=1.0,early_tick_when_all_submitted=True):
+    def __init__(self,tick_seconds=1.0):
         self.tick_seconds=float(tick_seconds)
-        self.early_tick_when_all_submitted=bool(early_tick_when_all_submitted)
 
     def describe(self):
         return dict(journal_format=JOURNAL_FORMAT,tick_seconds=self.tick_seconds,
-                    early_tick_when_all_submitted=self.early_tick_when_all_submitted,
-                    duplicate_policy=DUPLICATE_POLICY,
-                    order='canonical: sorted by agent id, rotated by (tick mod batch size); physical conflicts by kernel seed',
+                    early_tick=False,duplicate_policy=DUPLICATE_POLICY,
+                    order='seeded permutation of the sorted batch keyed by (world seed, tick); physical conflicts by kernel seed',
                     privileged_tick_endpoint=False)
 
 
-def canonical_batch(pending,tick):
-    """Arrival-independent order: sorted by agent id, rotated so no participant has standing priority."""
+def canonical_batch(pending,tick,seed=WORLD_SEED):
+    """Arrival-independent order: a seeded permutation of the sorted batch keyed by (seed, tick).
+    Deterministic and replayable; no participant has standing priority, and sparse contests (e.g. only
+    on even ticks) see no parity structure, because the permutation is pseudo-random per tick."""
     items=sorted(pending.items())
-    if not items:return []
-    r=tick%len(items)
-    return items[r:]+items[:r]
+    if len(items)<2:return items
+    key=int.from_bytes(hashlib.sha256(f'{seed}:{tick}'.encode()).digest()[:8],'big')
+    random.Random(key).shuffle(items)
+    return items
 
 
 class LiveUniverse:
-    def __init__(self,root,clock=None,world_factory=build_shared_world):
+    def __init__(self,root,clock=None,world_factory=build_shared_world,single_writer=False):
         self.lock=threading.RLock()
         self.root=Path(root);self.root.mkdir(parents=True,exist_ok=True)
+        self._lockfile=None
+        if single_writer:
+            # Deployment guard: one authoritative writer per state directory. A second process (or a
+            # second worker) sharing the journal would have its own clock, memory and lock.
+            self._lockfile=open(self.root/'.writer.lock','a+')
+            try:fcntl.flock(self._lockfile.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+            except OSError:
+                self._lockfile.close();self._lockfile=None
+                raise RuntimeError(f'another writer holds {self.root}: refusing to start a second authority')
         self.journal=self.root/'events.jsonl';self.w=world_factory()
         self.by_token={};self.next_slot=0;self.last_chain='0'*64;self._poisoned=False
         self.pending={}                       # agent -> (kind,pos), at most one per tick
@@ -102,20 +114,24 @@ class LiveUniverse:
 
     # ---------------- clock ----------------
     def _run_clock(self):
-        due=time.monotonic()+self.clock.tick_seconds
+        # Fixed cadence anchored to the start time, so neither request volume nor tick duration drifts it.
+        period=self.clock.tick_seconds;due=time.monotonic()+period
         while not self._stop.is_set():
-            now=time.monotonic()
-            with self.lock:
-                all_in=self.clock.early_tick_when_all_submitted and self.next_slot>0 and len(self.pending)>=self.next_slot
-            if now>=due or all_in:
-                try:self.advance()
-                except Exception:pass               # poisoned journal: wait for restart, keep the thread alive
-                due=time.monotonic()+self.clock.tick_seconds
-            self._stop.wait(min(0.02,max(0.001,self.clock.tick_seconds/20)))
+            remaining=due-time.monotonic()
+            if remaining>0:
+                self._stop.wait(min(remaining,0.25));continue
+            try:self.advance()
+            except Exception:pass                   # poisoned journal: wait for restart, keep the thread alive
+            due+=period
+            if time.monotonic()-due>period:due=time.monotonic()+period   # fell far behind: re-anchor, never burst
 
     def close(self):
         self._stop.set()
         if self._thread:self._thread.join(timeout=2)
+        if self._lockfile:
+            try:fcntl.flock(self._lockfile.fileno(),fcntl.LOCK_UN)
+            except OSError:pass
+            self._lockfile.close();self._lockfile=None
 
     def clock_view(self):
         with self.lock:
@@ -238,6 +254,9 @@ class LiveUniverse:
     def submit(self,token,kind,x=0,y=0):
         if kind not in ACTIONS:raise ValueError('No boundary ops in the live universe')
         with self.lock:
+            if self._poisoned:
+                # Never acknowledge an action the world cannot execute (review finding A).
+                raise RuntimeError('Journal error: the world is not accepting actions until restart and verification')
             s=self._get(token)
             pos=(x,y)
             if kind!='wait' and not self.w.inb(pos):raise ValueError('outside lattice')
@@ -278,7 +297,7 @@ class LiveUniverse:
         """Execute exactly one world tick with the canonically ordered accepted batch."""
         with self.lock:
             if self._poisoned:raise RuntimeError('Journal error: restart and verify before another mutation')
-            batch=canonical_batch(self.pending,self.w.tick)
+            batch=canonical_batch(self.pending,self.w.tick,self.w.seed)
             staged=self.w.clone()
             staged_actors={h:copy.deepcopy(a) for h,a in self.by_token.items()}
             ev=staged.step(agent_ops=[(a,k,p) for a,(k,p) in batch if k!='wait'])

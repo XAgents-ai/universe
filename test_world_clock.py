@@ -7,7 +7,8 @@ from __future__ import annotations
 import itertools, json, tempfile, time
 from pathlib import Path
 from unittest.mock import patch
-from open_world import LiveUniverse, ClockPolicy, build_shared_world, canonical_batch, JOURNAL_FORMAT
+from collections import Counter
+from open_world import LiveUniverse, ClockPolicy, build_shared_world, canonical_batch, JOURNAL_FORMAT, WORLD_SEED
 from v0_kernel import World, Params
 
 MANUAL=lambda: ClockPolicy(tick_seconds=0)
@@ -64,11 +65,20 @@ def w1_01_permutation_invariance():
     outcomes=json.loads(next(iter(results))[1])
     winners=[o['agent'] for o in outcomes if o['result']=='ok'];losers=[o['agent'] for o in outcomes if o['result']=='refused:no-energy']
     assert len(winners)==1 and len(losers)==1,outcomes
-    # and the pre-registered rule rotates priority with the tick, so standing priority does not exist
-    order_t3=[a for a,_ in canonical_batch({'entrant-0':1,'entrant-1':1},3)]
-    order_t4=[a for a,_ in canonical_batch({'entrant-0':1,'entrant-1':1},4)]
-    assert order_t3!=order_t4
-    print('PASS W1-01 permuting arrival order yields one state hash and one batch; contested quantum resolved by the registered rule, not arrival')
+    # Review finding C: a rotation rule gave the same actor first place on every even tick. The seeded
+    # permutation must show no standing priority on sparse, periodic contests. 300 contests on even ticks
+    # only, two and three contestants: each contestant leads within a binomial band around 1/n.
+    for n,(lo,hi) in {2:(0.40,0.60),3:(0.23,0.44)}.items():
+        pend={f'entrant-{i}':1 for i in range(n)}
+        lead=Counter(canonical_batch(pend,t,WORLD_SEED)[0][0] for t in range(1000,1600,2))
+        share={a:c/300 for a,c in lead.items()}
+        assert len(lead)==n and all(lo<=v<=hi for v in share.values()),share
+        odd=Counter(canonical_batch(pend,t,WORLD_SEED)[0][0] for t in range(1001,1601,2))
+        assert len(odd)==n
+    # ...and the order is a function of (seed, tick) only: identical across calls, different across seeds
+    assert canonical_batch({'entrant-0':1,'entrant-1':1},20,WORLD_SEED)==canonical_batch({'entrant-0':1,'entrant-1':1},20,WORLD_SEED)
+    assert any(canonical_batch({'entrant-0':1,'entrant-1':1},t,WORLD_SEED)!=canonical_batch({'entrant-0':1,'entrant-1':1},t,WORLD_SEED+1) for t in range(50))
+    print('PASS W1-01 permuting arrival order yields one state hash and one batch; contested quantum resolved by the registered rule; no standing priority on sparse even-tick contests (2 and 3 contestants, 300 each)')
 
 
 def w1_02_polling_is_free_and_inert():
@@ -108,25 +118,27 @@ def w1_03_duplicate_submission_single_effect():
 def w1_04_silent_participants_do_not_stop_time():
     """The world advances on its own clock policy while participants are silent; all-submitted ticks early."""
     with tempfile.TemporaryDirectory() as d:
-        u=LiveUniverse(d,clock=ClockPolicy(tick_seconds=0.05,early_tick_when_all_submitted=False))
+        u=LiveUniverse(d,clock=ClockPolicy(tick_seconds=0.05))
         try:
             u.join('human');tick=u.w.tick
             time.sleep(0.6)
             advanced=u.w.tick-tick
-            assert advanced>=5,advanced
+            assert 5<=advanced<=14,advanced
             events=u.observer_log()['events']
             assert all(e['batch']==[] for e in events if e['kind']=='tick')
         finally:u.close()
+    # Review finding B: request volume must not shorten a tick. One participant (who is, alone, "everyone")
+    # submits as fast as possible for 1.2 s under a 0.5 s interval: at most 3 ticks, never 40+.
     with tempfile.TemporaryDirectory() as d:
-        u=LiveUniverse(d,clock=ClockPolicy(tick_seconds=5.0,early_tick_when_all_submitted=True))
+        u=LiveUniverse(d,clock=ClockPolicy(tick_seconds=0.5))
         try:
-            toks=[u.join('human')['token'],u.join('model')['token']];tick=u.w.tick
-            t0=time.monotonic()
-            for t in toks:u.submit(t,'wait')
-            while u.w.tick==tick and time.monotonic()-t0<2:time.sleep(0.01)
-            assert u.w.tick==tick+1 and time.monotonic()-t0<2,'all-submitted should tick long before the 5 s interval'
+            t=u.join('human')['token'];tick=u.w.tick;n=0;end=time.monotonic()+1.2
+            while time.monotonic()<end:u.submit(t,'wait');n+=1
+            advanced=u.w.tick-tick
+            assert 1<=advanced<=3,f'{n} submissions accelerated the clock to {advanced} ticks in 1.2 s'
+            assert u.clock_view()['early_tick'] is False
         finally:u.close()
-    print('PASS W1-04 silent participants cannot hold physics; scheduler ticks on its own and early when everyone has submitted')
+    print(f'PASS W1-04 silent participants cannot hold physics ({advanced} ticks from {n} rapid submissions in 1.2 s at 0.5 s/tick); no early tick, no acceleration')
 
 
 def w1_05_restart_replays_batches_ledgers_hashes():
@@ -181,7 +193,51 @@ def w1_06_failed_commit_leaves_published_world_unchanged():
         print('PASS W1-06 failed journal commit leaves the published world unchanged and blocks further ticks until restart')
 
 
+def w1_07_poisoned_world_refuses_submissions():
+    """Review finding A: after a journal failure the world must never acknowledge an action it cannot execute."""
+    with tempfile.TemporaryDirectory() as d:
+        u=LiveUniverse(d,clock=MANUAL());token=u.join()['token']
+        with patch('open_world.os.fsync',side_effect=OSError('disk failed')):
+            try:u.advance()
+            except OSError:pass
+            else:raise AssertionError('journal failure did not propagate')
+        assert u._poisoned
+        try:u.submit(token,'wait')
+        except RuntimeError as e:assert 'not accepting' in str(e)
+        else:raise AssertionError('poisoned world acknowledged a submission')
+        assert u.pending=={} and u.actor_view(token)['submissions']==[]
+    # and the HTTP mapping is a non-200 status, not a 200 with "accepted"
+    import os
+    os.environ['UNIVERSE_TICK_SECONDS']='0'
+    from fastapi.testclient import TestClient
+    import server
+    c=TestClient(server.app)
+    j=c.post('/api/live/join',json={'controller':'program'}).json();h={'Authorization':'Bearer '+j['token']}
+    with patch('open_world.os.fsync',side_effect=OSError('disk failed')):
+        try:server.LIVE.advance()
+        except OSError:pass
+    r=c.post('/api/live/act',json={'kind':'wait'},headers=h)
+    assert r.status_code==503,(r.status_code,r.text)
+    assert c.get('/api/live/clock').json()['journal_poisoned'] is True
+    server.LIVE._poisoned=False   # restore the shared test instance for any later test in this process
+    print('PASS W1-07 poisoned journal: submissions refused in-process and HTTP 503, never acknowledged')
+
+
+def w1_08_single_writer_guard():
+    """Deployment guard: one authoritative writer per state directory."""
+    with tempfile.TemporaryDirectory() as d:
+        a=LiveUniverse(d,clock=MANUAL(),single_writer=True)
+        try:
+            try:LiveUniverse(d,clock=MANUAL(),single_writer=True)
+            except RuntimeError as e:assert 'another writer' in str(e)
+            else:raise AssertionError('second writer started on the same journal')
+        finally:a.close()
+        b=LiveUniverse(d,clock=MANUAL(),single_writer=True);b.close()   # released on close
+        print('PASS W1-08 a second authoritative writer on the same state directory refuses to start')
+
+
 if __name__=='__main__':
     for f in [w1_01_permutation_invariance,w1_02_polling_is_free_and_inert,w1_03_duplicate_submission_single_effect,
               w1_04_silent_participants_do_not_stop_time,w1_05_restart_replays_batches_ledgers_hashes,
-              w1_06_failed_commit_leaves_published_world_unchanged]:f()
+              w1_06_failed_commit_leaves_published_world_unchanged,w1_07_poisoned_world_refuses_submissions,
+              w1_08_single_writer_guard]:f()

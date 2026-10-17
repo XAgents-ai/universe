@@ -37,7 +37,7 @@ Open **http://127.0.0.1:8765** in a browser.
 | Solo sandbox | Same limited physical interface in isolated world | Isolated from the open universe |
 | Experiment | Full global state in isolated clone | Logged `drop`, `remove`, `replace` only |
 
-The **live universe is persistent across server restarts**. State is stored in `.universe_state/events.jsonl` by default (or set `UNIVERSE_STATE_DIR`). The browser tries to preserve its private participant token in tab/session storage so refreshing does not consume an entry slot. A server-side ledger replays every event and verifies its chain and physical state hash on startup. Four entrants max because only four physical seed actuators were placed initially. Time advances only on participant actions, not by a wall-clock timer.
+The **live universe is persistent across server restarts**. State is stored in `.universe_state/events.jsonl` by default (or set `UNIVERSE_STATE_DIR`). The browser tries to preserve its private participant token in tab/session storage so refreshing does not consume an entry slot. A server-side ledger replays every event and verifies its chain and physical state hash on startup. Four entrants max because only four physical seed actuators were placed initially. **W1 — the world owns its clock:** an HTTP request never advances physics. A participant submits at most one action per tick; the world advances on its own policy (`UNIVERSE_TICK_SECONDS`, default 1.0; early when every participant has submitted; `0` = manual mode for tests). Each tick executes one canonically ordered batch and is journaled as one replayable transition.
 
 You can audit the durable journal after running the server:
 
@@ -60,7 +60,8 @@ REST summary (local only):
 ```text
 POST /api/live/join                {"controller":"model", "global_exposure_declared":false}
 GET  /api/live/actor              Authorization: Bearer <token>
-POST /api/live/act                Authorization: Bearer <token>
+POST /api/live/act                Authorization: Bearer <token>   submit ONE action for the next tick (set/observe/claim/wait); never advances physics
+GET  /api/live/clock              clock policy, current tick, pending submissions (read-only; there is no endpoint that advances time)
                                   {"kind":"observe"|"set"|"claim"|"wait", "x":3,"y":4}
 GET  /api/live/observer           global state, no write
 GET  /api/live/events             global audit journal with bearer tokens removed

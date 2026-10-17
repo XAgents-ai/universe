@@ -4,6 +4,7 @@ from pathlib import Path
 # ensure isolated state before server import
 _work=tempfile.TemporaryDirectory()
 os.environ['UNIVERSE_STATE_DIR']=_work.name
+os.environ['UNIVERSE_TICK_SECONDS']='0'          # W1: manual clock; the test advances the world explicitly
 from fastapi.testclient import TestClient
 from playwright.sync_api import sync_playwright
 import server
@@ -39,12 +40,15 @@ with sync_playwright() as pw:
     assert 'LIVE ACTOR' in page.locator('#tickLabel').inner_text()
     page.locator('#x').fill('3');page.locator('#y').fill('4')
     page.locator('#actionButtons button').filter(has_text='OBSERVE').click();page.wait_for_timeout(150)
-    assert 'observe' in page.locator('#eventLog').inner_text()
+    assert 'observe' in page.locator('#eventLog').inner_text() and 'accepted' in page.locator('#eventLog').inner_text()   # submitted, not yet executed
+    server.LIVE.advance();page.locator('#refreshBtn').click();page.wait_for_timeout(150)
+    assert 'executed' in page.locator('#eventLog').inner_text()
     page.screenshot(path=str(HERE/'preview_live_agent.png'),full_page=True)
     page.locator('#actionButtons button').filter(has_text='SET').click();page.wait_for_timeout(180)
     assert 'set' in page.locator('#eventLog').inner_text()
+    server.LIVE.advance()
     page.locator('button[data-role="livewatch"]').click();page.wait_for_timeout(200)
-    assert 'LIVE TICK 22' in page.locator('#tickLabel').inner_text(),page.locator('#tickLabel').inner_text()
+    assert 'LIVE TICK 22' in page.locator('#tickLabel').inner_text(),page.locator('#tickLabel').inner_text()   # two explicit world ticks, not two requests
     assert not errors,errors
     browser.close()
     print('PASS headless browser: live global view, paid participant observation, charged set, same persistent world, no JS errors')

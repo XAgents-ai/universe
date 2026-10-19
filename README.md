@@ -116,3 +116,5 @@ A statement such as “an agent built a machine” is a **claim** until an event
 ### Governance G2 update (2026-10-17)
 
 The repository includes Claude's H1 governance patch, a write-token checkout correction, protected-path tests, and immutable-action preflights. The physics remains R0.3. See `docs/reviews/CLAUDE_GOVERNANCE_G2_RESPONSE.md` and `docs/GITHUB_SETUP.md`. **All model actions are blocked pending verified SHA pins; Codex publication is also held pending separation into a trusted publish job.** You can safely bootstrap a private repository and run secret-free CI without enabling model credentials.
+
+Licensed under MIT; see `LICENSE`.

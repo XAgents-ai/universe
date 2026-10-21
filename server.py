@@ -21,14 +21,17 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from v0_oracle import build_seed_world, AG, TARGET_BOND
-from open_world import LiveUniverse
+from open_world import LiveUniverse, ClockPolicy
 from v0_responder import seed_world as build_responder_seed_world
 
 HERE = Path(__file__).resolve().parent
 APP = FastAPI(title='Universe V0 physical-state viewer', version='0.1')
 SESSIONS = {}
 LOCK = threading.RLock()
-LIVE = LiveUniverse(Path(os.environ.get('UNIVERSE_STATE_DIR', str(HERE/'.universe_state'))))
+# W1: the world owns its clock. UNIVERSE_TICK_SECONDS > 0 runs the scheduler; 0 is manual mode for tests/harnesses.
+LIVE = LiveUniverse(Path(os.environ.get('UNIVERSE_STATE_DIR', str(HERE/'.universe_state'))),
+                    clock=ClockPolicy(tick_seconds=float(os.environ.get('UNIVERSE_TICK_SECONDS', '1.0'))),
+                    single_writer=True)   # one authoritative writer per state directory; a second process refuses to start
 
 
 class Create(BaseModel):
@@ -249,10 +252,19 @@ def live_actor(authorization: str | None = Header(default=None)):
 
 @APP.post('/api/live/act')
 def live_act(cmd:Action, authorization: str | None = Header(default=None)):
+    # W1: SUBMIT one action for the next world tick. This request never advances physics.
     token=_bearer(authorization)
-    try:return LIVE.act(token,cmd.kind,cmd.x,cmd.y)
+    try:return LIVE.submit(token,cmd.kind,cmd.x,cmd.y)
     except KeyError:raise HTTPException(401,'Unknown participant token')
     except ValueError as e:raise HTTPException(403,str(e))
+    except RuntimeError as e:raise HTTPException(503,str(e))   # journal poisoned: fail closed, never acknowledge
+
+
+@APP.get('/api/live/clock')
+def live_clock():
+    # Read-only description of the world's clock policy and the current tick. There is deliberately
+    # no endpoint that advances the world: time is not a participant privilege.
+    return LIVE.clock_view()
 
 
 @APP.get('/api/live/observer')

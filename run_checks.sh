@@ -10,6 +10,7 @@ python v0_responder.py
 UNIVERSE_STATE_DIR="$(mktemp -d)" python test_viewer_api.py
 UNIVERSE_STATE_DIR="$(mktemp -d)" python test_live_world.py
 python test_journal_integrity.py
+python test_world_clock.py
 if [ "${WITH_BROWSER:-0}" = '1' ]; then
   UNIVERSE_STATE_DIR="$(mktemp -d)" python test_viewer_ui.py
   python test_live_ui.py

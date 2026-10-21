@@ -5,7 +5,7 @@ To integrate a model, replace choose_action(view) with your own model call. Only
 pass the returned paid observations, actor history and owned-site coordinates.
 Do not provide the global observer API result to an uninformed research actor.
 """
-import argparse,json,urllib.request,urllib.error
+import argparse,json,time,urllib.request,urllib.error
 
 
 def http(root,path,payload=None,token=None):
@@ -43,8 +43,13 @@ def main():
         print('Private resume token (do not paste publicly):',token)
     for _ in range(args.steps):
         action=choose_action(view)
-        view=http(args.url,'/api/live/act',action,token)
-        print('call',view['calls'],'action',action['kind'],'last outcome',view['actions'][-1] if view['actions'] else 'wait')
+        sub=http(args.url,'/api/live/act',action,token)          # W1: submit for the NEXT world tick; never advances physics
+        target=sub['scheduled_for_tick']
+        while True:                                               # poll (free, inert) until the world's clock has passed that tick
+            view=http(args.url,'/api/live/actor',token=token)
+            if view['next_tick']>target:break
+            time.sleep(0.1)
+        print('submitted for tick',target,'status',sub['submission'],'action',action['kind'],'last outcome',view['actions'][-1] if view['actions'] else 'wait')
     print('Only locally paid observations were used; all effects occurred in the shared kernel.')
 
 if __name__=='__main__':main()
